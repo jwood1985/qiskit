@@ -67,73 +67,59 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 # Project-Specific Guidelines
 
 - Find existing agentic skills and use them where relevant
+- The provider interface shall be abstracted such that adding a new quantum provider (Qiskit, Braket, Azure, etc.) requires only implementing a defined interface — no provider-specific code outside that boundary
+- Default to simulator backends (Qiskit Aer, Braket LocalSimulator, etc.) for all development; real hardware execution must be an explicit, opt-in choice surfaced in the UI to avoid burning credits
+- Quantum jobs are asynchronous and may queue for minutes to hours; the UI and optimizer loop must handle the async job lifecycle (submitted → queued → running → completed/failed) without blocking
+- API tokens and secrets shall be stored via OS keychain (or equivalent platform-native secure storage), never in plaintext config files or environment variables committed to source
 - For React frontends, use this color schema where possible: #0D1B99, #FF7F27, #060242, and #C7C7C7
 - For React frontends, the UI(s) shall focus on simplicity, consistency, high contrast, and accessibility to enhance user experience
-- The UI(s) shall employ an "F" pattern for how the content is tracked over the page
+- The UI(s) shall employ a dashboard-grid layout appropriate for dense telemetry display — fixed top navbar, sidebar for navigation, primary content area for charts/tables, information density prioritized over whitespace
 - All errors shall be gracefully handled and logged, where appropriate
 - All exposed API endpoints must have tests
 
 # Goal
 
-- This is a project with two components: (1) a React UI for tracking telemetry for variational quantum eigensolvers (VQEs) across different providers (i.e., Qiskit, Braket, etc.); and (2) API calls to those quantum providers for calculating the ground state for the molecule LiH using VQE.
+- This is a project with two components: (1) a React UI for tracking telemetry across the full hybrid classical-quantum workflow for variational quantum eigensolvers (VQEs) across different providers (Qiskit, Braket, etc.); and (2) API calls to those quantum providers for calculating the ground state of the molecule LiH using VQE.
+- The success criterion is not "ship a working VQE app." It is "ship a working VQE app AND produce a documented inventory of observability gaps at the classical-quantum boundary." Both deliverables matter equally.
 
 # Guardrails
 
 - Coding shall not be done in violation of the principles outlined in this document.
 - Plans must be approved by me prior to proceeding.
-- Justify your work - why you do something is as important as the how.
+- Justify your work — why you do something is as important as the how.
 
 # Tasks
 
-- Produce a user-friendly React-based UI for connecting to the quantum API providers. 
+- Produce a user-friendly React-based UI for connecting to the quantum API providers.
 - The VQE ground state shall be calculated for LiH.
-- Determine what is nedeed both for classical compute and quantum compute for the VQE approach.
-- Encode the quantum portion in an ansantz.
-- Add OpenTelemetry signals for the classical optimizer portion, sending to qof78400.
-- There shall be a Settings page for the API providers used (Qiskit, Braket, etc.), any API endpoints that need exposing, any API tokens that need persistence and security, etc.
-- The main page will allow you to select a molecule for ground state energy calculations. Choices are LiH (default) and H2, for now.
-- There shall be a top navbar that is fixed with other navigation options (i.e., Settings, etc.).
+- Determine what is needed for both classical compute and quantum compute in the VQE approach.
+- Encode the quantum portion in an ansatz.
+- Instrument the full hybrid workflow with OpenTelemetry, sending to Dynatrace tenant `qof78400`. Capture, at minimum:
+  - Classical optimizer iteration spans (per `minimize()` step)
+  - Quantum circuit submission spans (per parametrized circuit evaluation)
+  - Queue time, execution time, and shot count per job
+  - Error mitigation method and configuration in use
+  - Backend calibration metadata exposed by the provider at job submission time
+  - Trace context propagation across the classical-quantum boundary (classical span → quantum job → result handling)
+- Maintain a `GAPS.md` file at the repo root documenting:
+  - Every place a provider API lacks observability hooks (e.g., no way to retrieve calibration data, no shot-level telemetry)
+  - Every workaround required to propagate trace context across the classical-quantum boundary
+  - Every telemetry signal that would be valuable but is not exposed by the provider
+  - Every place provider APIs behave differently from each other in ways that complicate uniform instrumentation
+  This file is a first-class deliverable, not an afterthought.
+- There shall be a Settings page for the API providers used (Qiskit, Braket, etc.), any API endpoints that need exposing, and secure storage of API tokens (per the secret management guideline above).
+- The main page will allow selection of a molecule for ground state energy calculations. Choices are LiH (default) and H2, for now.
+- There shall be a fixed top navbar with other navigation options (Settings, GAPS dashboard, etc.).
 
 # Persistence
 
-- Every 2000 tokens, persist your progress to `CLAUDE.md`.
-- Persist to `CLAUDE.md` before compactification.
+- Maintain a separate `AGENT-MEMORY.md` file at the repo root for progress state. Do NOT persist progress into this `CLAUDE.md` file — `CLAUDE.md` is for guidelines and task definitions only.
+- Persist to `AGENT-MEMORY.md` after each completed task (task-based trigger), not on token counts.
+- `AGENT-MEMORY.md` should capture: completed tasks, in-progress task and current step, blockers encountered, decisions made and their justifications, and pointers to where work lives in the codebase.
 
 # Documentation
 
-- Document this project to a `README.md` file.
+- Document this project in a `README.md` file.
+- Update `README.md` when public interface contracts, setup instructions, or supported providers change — documentation follows code, not the other way around.
 - Documentation should be clean and easy to understand.
-- The README.md file should have a Quick Start section, if relevant.
-- Documentation should be performed before every major change.
-
-# Progress
-
-Initial build complete (single session). Plan approved up front via the four
-clarifying questions:
-
-- OTel target: `qof78400.live.dynatrace.com` (Dynatrace OTLP /api/v2/otlp)
-- Execution: real provider credentials required, no simulator fallback
-- Token storage: Fernet-encrypted file at `~/.vqe-app/secrets.enc`
-- Layout: subfolder `vqe-app/` inside the Qiskit repo
-
-Delivered:
-
-- `backend/` — FastAPI app (`app.main`) with three routers:
-  `/api/settings`, `/api/providers`, `/api/vqe`. VQE pipeline =
-  PySCF/qiskit-nature Hamiltonian → Jordan–Wigner → UCCSD (or
-  EfficientSU2) ansatz → SciPy COBYLA driving a Qiskit Estimator
-  primitive. OTel signals: span per run, counter per iteration, gauge
-  for current energy → Dynatrace OTLP exporter. Token store is Fernet
-  with atomic writes and `0600` key file.
-- `backend/tests/` — 13 pytest cases covering all exposed endpoints,
-  redaction of stored tokens, encrypted-on-disk persistence, run
-  lifecycle (pending → running → succeeded/failed), and request
-  validation. All passing.
-- `frontend/` — Vite + React + TypeScript. Fixed top navbar (Home,
-  Settings). Home page: molecule selector (LiH default, H2), provider
-  selector with live status badge, ansatz selector, max-iter input,
-  live energy-vs-iteration SVG chart. Settings page: forms for Qiskit
-  (token, instance, channel), Braket (access key, secret, region,
-  device), and Dynatrace (token). Theme.css applies the four-colour
-  palette and F-pattern layout with high-contrast focus rings.
-- README.md, Makefile, .gitignore.
+- The `README.md` file should have a Quick Start section.
