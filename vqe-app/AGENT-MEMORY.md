@@ -119,10 +119,41 @@ deferred to Phase E.
 
 ---
 
+### A5. Phase E — dashboard UI, sidebar, GAPS dashboard, dynamic forms
+
+- Backend: new `/api/gaps` endpoint reads `vqe-app/GAPS.md` from disk
+  and returns its markdown body. New `tests/test_gaps_api.py` asserts
+  the response starts with the expected H1. 22/22 backend tests pass.
+- Frontend layout switched from F-pattern to dashboard-grid: a slim
+  top navbar (brand only) + 220 px left sidebar + dense card grid in
+  the main area. Information density prioritised per CLAUDE.md.
+- New `<Sidebar />` with Workspace (Home, Settings) and Observability
+  (GAPS dashboard) sections.
+- New `<GapsDashboard />` page fetches `/api/gaps` and renders the
+  markdown via `react-markdown` + `remark-gfm` (tables).
+- `<Settings />` rewritten to render provider forms dynamically from
+  each provider's `settings_schema`. A new provider in the backend
+  registry appears here automatically — zero edits required.
+- `<Home />` updated:
+  - Provider list now driven by `/api/providers` (no hard-coded
+    Qiskit/Braket switch).
+  - New "Use real hardware" checkbox with a credit-burn warning card,
+    default off (simulator).
+  - New "Quantum job lifecycle" panel surfaces
+    `current_job_state` + `last_job_snapshot` from the run status
+    (backend, queue/exec time, shots, raw provider state).
+- `client.ts` rewritten for the new payload shapes (providers map,
+  JobSnapshot, gaps endpoint).
+- `theme.css` rewritten for the dashboard-grid layout with
+  high-contrast focus rings and markdown styling.
+- Frontend type-checks and builds (336 KB JS, 105 KB gzipped — growth
+  comes entirely from react-markdown + remark-gfm).
+
+---
+
 ## In-progress task
 
-(none — Phase D complete, awaiting Phase E: dashboard-grid UI, sidebar
-nav, GAPS dashboard, dynamic Settings forms, real-hardware toggle)
+(none — Phase E complete, awaiting Phase F: README refresh)
 
 ---
 

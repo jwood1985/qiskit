@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_config
+from .routes import gaps as gaps_routes
 from .routes import providers as providers_routes
 from .routes import settings as settings_routes
 from .routes import vqe as vqe_routes
@@ -34,6 +35,7 @@ def create_app() -> FastAPI:
     app.include_router(settings_routes.router)
     app.include_router(providers_routes.router)
     app.include_router(vqe_routes.router)
+    app.include_router(gaps_routes.router)
 
     @app.get("/api/health")
     def health() -> dict[str, str]:

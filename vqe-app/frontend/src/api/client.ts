@@ -1,8 +1,16 @@
 // Thin fetch wrapper around the FastAPI backend.
 
 export type Molecule = "LiH" | "H2";
-export type ProviderName = "qiskit" | "braket";
 export type AnsatzName = "UCCSD" | "EfficientSU2";
+
+export interface ProviderField {
+  name: string;
+  label: string;
+  secret: boolean;
+  required: boolean;
+  default: string | null;
+  help: string | null;
+}
 
 export interface ProviderView {
   configured: boolean;
@@ -11,8 +19,7 @@ export interface ProviderView {
 }
 
 export interface SettingsView {
-  qiskit: ProviderView;
-  braket: ProviderView;
+  providers: Record<string, ProviderView>;
   dynatrace: ProviderView;
 }
 
@@ -22,16 +29,17 @@ export interface ProviderSecret {
 }
 
 export interface SettingsPayload {
-  qiskit?: ProviderSecret;
-  braket?: ProviderSecret;
+  providers?: Record<string, ProviderSecret>;
   dynatrace?: ProviderSecret;
 }
 
 export interface ProviderStatus {
-  name: ProviderName;
+  slug: string;
+  display_name: string;
   configured: boolean;
   ready: boolean;
   detail: string;
+  schema_fields: ProviderField[];
 }
 
 export interface VQEIteration {
@@ -39,15 +47,28 @@ export interface VQEIteration {
   energy: number;
 }
 
+export interface JobSnapshot {
+  state: string;
+  raw_state: string | null;
+  queue_time_s: number | null;
+  execution_time_s: number | null;
+  shots: number | null;
+  backend: string | null;
+  error_mitigation: Record<string, unknown> | null;
+  calibration: Record<string, unknown> | null;
+}
+
 export interface VQERunStatus {
   id: string;
   state: "pending" | "running" | "succeeded" | "failed";
   molecule: Molecule;
-  provider: ProviderName;
+  provider: string;
   ansatz: AnsatzName;
   iterations: VQEIteration[];
   final_energy: number | null;
   error: string | null;
+  current_job_state: string | null;
+  last_job_snapshot: JobSnapshot | null;
 }
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
@@ -64,7 +85,7 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
       const body = await response.json();
       if (body?.detail) detail = body.detail;
     } catch {
-      // ignore — keep the generic status message
+      // ignore
     }
     throw new Error(detail);
   }
@@ -81,13 +102,15 @@ export const api = {
   getProviders: () => call<ProviderStatus[]>("/api/providers"),
   startRun: (req: {
     molecule: Molecule;
-    provider: ProviderName;
+    provider: string;
     ansatz: AnsatzName;
     max_iter?: number;
+    use_real_hardware?: boolean;
   }) =>
     call<VQERunStatus>("/api/vqe/run", {
       method: "POST",
       body: JSON.stringify(req),
     }),
   getRun: (id: string) => call<VQERunStatus>(`/api/vqe/runs/${id}`),
+  getGaps: () => call<{ markdown: string }>("/api/gaps"),
 };
