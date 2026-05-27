@@ -1,17 +1,25 @@
-"""Settings router — persists provider credentials, redacts on read."""
+"""Settings router — persists provider credentials, redacts on read.
+
+Iterates the provider registry so a new provider is reflected without
+edits here.
+"""
 from __future__ import annotations
 
 import logging
 
 from fastapi import APIRouter
 
-from ..models import ProviderSecret, ProviderView, SettingsPayload, SettingsView
+from ..models import ProviderView, SettingsPayload, SettingsView
+from ..providers import all_providers
 from ..secrets_store import get_store, redact
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
-_PROVIDERS = ("qiskit", "braket", "dynatrace")
+# Non-provider settings stored alongside providers in the same encrypted
+# store. Dynatrace is a telemetry sink, not a quantum provider, so it
+# does not live in the provider registry.
+_TELEMETRY_KEYS = ("dynatrace",)
 
 
 def _view(record: dict | None) -> ProviderView:
@@ -26,11 +34,10 @@ def _view(record: dict | None) -> ProviderView:
 
 @router.get("", response_model=SettingsView)
 def read_settings() -> SettingsView:
-    store = get_store()
-    data = store.get_all()
+    data = get_store().get_all()
+    providers = {p.slug: _view(data.get(p.slug)) for p in all_providers()}
     return SettingsView(
-        qiskit=_view(data.get("qiskit")),
-        braket=_view(data.get("braket")),
+        providers=providers,
         dynatrace=_view(data.get("dynatrace")),
     )
 
@@ -38,23 +45,29 @@ def read_settings() -> SettingsView:
 @router.put("", response_model=SettingsView)
 def update_settings(payload: SettingsPayload) -> SettingsView:
     store = get_store()
-    incoming = {
-        "qiskit": payload.qiskit,
-        "braket": payload.braket,
-        "dynatrace": payload.dynatrace,
-    }
-    for name, value in incoming.items():
-        if value is None:
-            continue
-        record: dict = {}
-        if value.token is not None:
-            record["token"] = value.token
-        if value.extra is not None:
-            record["extra"] = value.extra
-        if record:
-            # Merge with existing so the user can update a field at a time.
-            existing = store.get(name) or {}
-            existing.update(record)
-            store.set(name, existing)
-            logger.info("Updated settings for provider %s", name)
+    known_slugs = {p.slug for p in all_providers()}
+
+    if payload.providers:
+        for slug, secret in payload.providers.items():
+            if slug not in known_slugs:
+                logger.warning("Ignoring unknown provider slug %r", slug)
+                continue
+            _merge(store, slug, secret)
+    if payload.dynatrace is not None:
+        _merge(store, "dynatrace", payload.dynatrace)
+
     return read_settings()
+
+
+def _merge(store, key: str, secret) -> None:
+    record: dict = {}
+    if secret.token is not None:
+        record["token"] = secret.token
+    if secret.extra is not None:
+        record["extra"] = secret.extra
+    if not record:
+        return
+    existing = store.get(key) or {}
+    existing.update(record)
+    store.set(key, existing)
+    logger.info("Updated settings for %s", key)

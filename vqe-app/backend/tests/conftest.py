@@ -1,10 +1,9 @@
 """Pytest fixtures.
 
-The backend depends on heavy quantum libraries (qiskit, qiskit-nature,
-amazon-braket-sdk) that we do NOT exercise in these unit tests — the
-tests cover the FastAPI surface and stub out anything that would require
-real provider credentials or a quantum simulator. Module imports are
-deferred via fixtures so collection works on minimal environments.
+Heavy quantum libraries (qiskit, qiskit-nature, amazon-braket-sdk) are
+stubbed at the module level so the FastAPI surface can be tested without
+real provider credentials. The provider registry is snapshotted per
+test so registration leaks between tests cannot occur.
 """
 from __future__ import annotations
 
@@ -16,10 +15,6 @@ import pytest
 
 
 def _install_qiskit_stubs() -> None:
-    """Provide tiny stubs for the optional quantum packages so importing
-    ``app.providers`` and ``app.vqe`` succeeds without the real wheels.
-    The endpoints we test never invoke the real entrypoints.
-    """
     fake_modules = [
         "qiskit",
         "qiskit.primitives",
@@ -40,7 +35,6 @@ def _install_qiskit_stubs() -> None:
         if name not in sys.modules:
             sys.modules[name] = types.ModuleType(name)
 
-    # Minimal callables the modules reference at import time.
     sys.modules["qiskit.circuit.library"].EfficientSU2 = lambda *a, **k: None
     sys.modules["qiskit.primitives"].BackendEstimator = lambda *a, **k: None
     sys.modules["qiskit_nature.second_q.drivers"].PySCFDriver = lambda *a, **k: None
@@ -64,6 +58,9 @@ def _install_qiskit_stubs() -> None:
 
 _install_qiskit_stubs()
 
+_BACKEND_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_BACKEND_ROOT))
+
 
 @pytest.fixture(autouse=True)
 def isolated_secrets_store(tmp_path, monkeypatch):
@@ -71,7 +68,6 @@ def isolated_secrets_store(tmp_path, monkeypatch):
     monkeypatch.setenv("VQE_APP_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("VQE_APP_SECRET", "unit-test-secret")
 
-    # Reset module-level singletons.
     from app import config as config_mod
     from app import secrets_store as store_mod
     from app import telemetry as telemetry_mod
@@ -86,17 +82,22 @@ def isolated_secrets_store(tmp_path, monkeypatch):
     store_mod._store = None
 
 
+@pytest.fixture(autouse=True)
+def snapshot_provider_registry():
+    """Restore the provider registry after each test so a test that
+    registers a stub provider does not leak it to its neighbours."""
+    from app.providers import registry
+
+    snapshot = dict(registry._providers)
+    yield
+    registry._providers.clear()
+    registry._providers.update(snapshot)
+
+
 @pytest.fixture()
 def client():
-    """FastAPI test client. Imported lazily so the stub fixtures apply
-    before app modules are imported."""
     from fastapi.testclient import TestClient
 
     from app.main import create_app
 
     return TestClient(create_app())
-
-
-# Make ``backend/`` importable as ``app``.
-_BACKEND_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(_BACKEND_ROOT))

@@ -17,7 +17,7 @@ from typing import Any, Callable
 import numpy as np
 from scipy.optimize import minimize
 
-from ..models import AnsatzName, Molecule, ProviderName, VQEIteration
+from ..models import AnsatzName, Molecule, VQEIteration
 from ..telemetry import get_meter, get_tracer
 from .ansatz import build_ansatz
 from .hamiltonian import build_problem
@@ -36,7 +36,7 @@ class VQEResult:
 def run_vqe(
     *,
     molecule: Molecule,
-    provider: ProviderName,
+    provider: str,
     ansatz_kind: AnsatzName,
     max_iter: int,
     estimator_factory: Callable[[Any], Any],
@@ -62,7 +62,7 @@ def run_vqe(
 
     with tracer.start_as_current_span("vqe.run") as span:
         span.set_attribute("vqe.molecule", molecule.value)
-        span.set_attribute("vqe.provider", provider.value)
+        span.set_attribute("vqe.provider", provider)
         span.set_attribute("vqe.ansatz", ansatz_kind.value)
         span.set_attribute("vqe.max_iter", max_iter)
 
@@ -89,7 +89,7 @@ def run_vqe(
 
             attrs = {
                 "molecule": molecule.value,
-                "provider": provider.value,
+                "provider": provider,
                 "ansatz": ansatz_kind.value,
             }
             iter_counter.add(1, attrs)

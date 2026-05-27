@@ -4,25 +4,23 @@ from __future__ import annotations
 import logging
 import threading
 import uuid
-from typing import Callable
+from typing import Any, Callable
 
 from fastapi import APIRouter, HTTPException
 
 from ..models import VQEIteration, VQERunRequest, VQERunStatus
-from ..providers import build_estimator_factory
-from ..providers.base import ProviderConfigError
+from ..providers import UnknownProvider, get as get_provider
+from ..secrets_store import get_store
 from ..vqe.runner import run_vqe
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/vqe", tags=["vqe"])
 
-# In-memory run registry. A single backend instance is assumed; for a
-# multi-replica deployment this would move to Redis or a database.
 _runs: dict[str, VQERunStatus] = {}
 _runs_lock = threading.Lock()
 
 
-def _set(run_id: str, **fields) -> None:
+def _set(run_id: str, **fields: Any) -> None:
     with _runs_lock:
         current = _runs[run_id]
         _runs[run_id] = current.model_copy(update=fields)
@@ -34,10 +32,31 @@ def _runner_factory() -> Callable:
     return run_vqe
 
 
+def _build_estimator_factory(slug: str) -> Callable[[Any], Any]:
+    """Build a (ansatz) -> Estimator factory for the named provider.
+
+    Looks the provider up in the registry, pulls the persisted secret,
+    and returns a closure the runner can invoke. Real credentials are
+    required at this phase (Phase B); Phase C introduces simulator
+    fallback.
+    """
+    provider = get_provider(slug)
+    secret = get_store().get(slug) or {}
+    if not secret.get("token"):
+        raise RuntimeError(
+            f"Provider {slug!r} is not configured. Add a token in Settings."
+        )
+
+    def factory(_ansatz: Any) -> Any:
+        return provider.make_estimator(secret)
+
+    return factory
+
+
 def _execute(run_id: str, req: VQERunRequest) -> None:
     try:
-        estimator_factory = build_estimator_factory(req.provider)
-    except ProviderConfigError as exc:
+        estimator_factory = _build_estimator_factory(req.provider)
+    except (RuntimeError, UnknownProvider) as exc:
         logger.warning("VQE run %s aborted: %s", run_id, exc)
         _set(run_id, state="failed", error=str(exc))
         return
@@ -67,6 +86,11 @@ def _execute(run_id: str, req: VQERunRequest) -> None:
 
 @router.post("/run", response_model=VQERunStatus, status_code=202)
 def start_run(req: VQERunRequest) -> VQERunStatus:
+    try:
+        get_provider(req.provider)
+    except UnknownProvider:
+        raise HTTPException(status_code=400, detail=f"Unknown provider {req.provider!r}")
+
     run_id = uuid.uuid4().hex
     status = VQERunStatus(
         id=run_id,

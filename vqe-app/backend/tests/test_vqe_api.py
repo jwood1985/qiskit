@@ -9,6 +9,7 @@ from app.vqe.runner import VQEResult
 
 def _wait_for(client, run_id: str, target_state: str, timeout: float = 5.0) -> dict:
     deadline = time.time() + timeout
+    body: dict = {}
     while time.time() < deadline:
         response = client.get(f"/api/vqe/runs/{run_id}")
         body = response.json()
@@ -29,16 +30,19 @@ def test_run_requires_provider_credentials(client):
     assert "not configured" in final["error"].lower()
 
 
+def test_run_rejects_unknown_provider(client):
+    response = client.post(
+        "/api/vqe/run",
+        json={"molecule": "LiH", "provider": "no-such-provider", "ansatz": "UCCSD"},
+    )
+    assert response.status_code == 400
+
+
 def test_run_drives_runner_and_returns_energy(client, monkeypatch):
     client.put(
         "/api/settings",
-        json={"qiskit": {"token": "tok-runner-test-9999"}},
+        json={"providers": {"qiskit": {"token": "tok-runner-test-9999"}}},
     )
-
-    def fake_factory(name):
-        return lambda ansatz: None
-
-    monkeypatch.setattr("app.routes.vqe.build_estimator_factory", fake_factory)
 
     def fake_runner(*, molecule, provider, ansatz_kind, max_iter, estimator_factory, on_iteration):
         for i in range(1, 4):
@@ -51,6 +55,10 @@ def test_run_drives_runner_and_returns_energy(client, monkeypatch):
         )
 
     monkeypatch.setattr("app.routes.vqe._runner_factory", lambda: fake_runner)
+    monkeypatch.setattr(
+        "app.providers.qiskit_provider.QiskitProvider.make_estimator",
+        lambda self, secret: None,
+    )
 
     response = client.post(
         "/api/vqe/run",
@@ -68,10 +76,11 @@ def test_run_drives_runner_and_returns_energy(client, monkeypatch):
 def test_runner_exception_marks_run_failed(client, monkeypatch):
     client.put(
         "/api/settings",
-        json={"qiskit": {"token": "tok-failure-1111"}},
+        json={"providers": {"qiskit": {"token": "tok-failure-1111"}}},
     )
     monkeypatch.setattr(
-        "app.routes.vqe.build_estimator_factory", lambda name: lambda a: None
+        "app.providers.qiskit_provider.QiskitProvider.make_estimator",
+        lambda self, secret: None,
     )
 
     def boom(**_kwargs):

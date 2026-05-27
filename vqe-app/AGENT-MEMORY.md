@@ -29,9 +29,44 @@ Code lives at: `vqe-app/backend/`, `vqe-app/frontend/`.
 
 ---
 
+### A2. Phase B — provider interface refactor
+
+- `app/providers/base.py` now defines a `Provider` Protocol + a Pydantic
+  `ProviderField` so each provider declares its own form schema.
+- `app/providers/registry.py` holds a slug → Provider dict; the package
+  `__init__` imports each adapter so it self-registers on import.
+- `QiskitProvider` and `BraketProvider` rewritten as classes
+  implementing the protocol. Heavy imports are still deferred inside
+  methods so the package loads in test environments without the wheels.
+- `models.py` dropped the `ProviderName` enum; provider slug is now a
+  free-form string validated at the route layer via
+  `providers.get(slug)`. `SettingsView` / `SettingsPayload` regrouped
+  under a `providers: {slug: ...}` dict so adding a new provider needs
+  no schema edits.
+- Routes (`providers`, `settings`, `vqe`) all iterate the registry.
+  Grep verifies no provider-name branching outside the adapter modules.
+- 17 pytest cases pass (13 + 4 new, including
+  `test_new_provider_registers_without_touching_other_modules` which
+  drops a stub `StubAzure` class into the registry and asserts it
+  appears in `/api/providers` and `/api/settings` with zero edits to
+  other modules — that is the literal verification criterion for D4).
+
+**Known temporary breakage:** `frontend/src/api/client.ts` and the
+Settings/Home pages still reference the previous payload shape
+(`SettingsView { qiskit, braket, dynatrace }` instead of
+`{ providers: {slug: …}, dynatrace }`). The frontend type-checks because
+the types are declared locally and don't depend on the backend at
+compile time, but the live `fetch` calls would mis-parse the response.
+This is intentional: Phase E rewrites the frontend client + pages to
+consume the new dynamic schema, so fixing this in Phase B would be
+throwaway work.
+
+---
+
 ## In-progress task
 
-(none — Phase A complete, awaiting Phase B start)
+(none — Phase B complete, awaiting Phase C: simulator default + opt-in
+real hardware)
 
 ---
 

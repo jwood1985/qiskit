@@ -1,58 +1,55 @@
-"""Provider dispatch.
+"""Quantum-provider interface.
 
-Every supported provider exposes two callables:
+Strict boundary: adding a new provider (Azure, IonQ, …) requires only
+implementing the :class:`Provider` protocol and registering the
+implementation. No other module in this codebase references provider
+names directly — they look them up by slug through
+:mod:`app.providers.registry`.
 
-* ``check(secret)`` — returns ``(ready, detail)`` after a cheap probe of
-  the user's credentials.
-* ``estimator_factory(secret)`` — returns a function that, given an
-  ansatz, builds a Qiskit Estimator primitive bound to that provider.
+The protocol is deliberately small. Each provider:
 
-Real credentials are required; both implementations raise
-:class:`ProviderConfigError` if the relevant secret is missing.
+* declares its identity (``slug``, ``display_name``);
+* declares the form fields needed to configure it (``settings_schema``)
+  so the UI can render the right form without provider-specific code;
+* probes its credentials cheaply (``probe``);
+* builds a Qiskit-style ``Estimator`` primitive bound to its backend
+  (``make_estimator``);
+* exposes backend metadata for telemetry (``inspect_backend``).
+
+Phases C and D extend ``make_estimator`` with a ``simulator`` keyword
+and introduce a job-handle abstraction respectively.
 """
 from __future__ import annotations
 
-from typing import Any, Callable
+from typing import Any, Protocol, runtime_checkable
 
-from ..models import ProviderName
-from ..secrets_store import get_store
-from . import braket_provider, qiskit_provider
+from pydantic import BaseModel
 
 
-class ProviderConfigError(RuntimeError):
-    """Raised when a provider is not configured for use."""
+class ProviderField(BaseModel):
+    """A single configuration field a provider needs."""
+
+    name: str
+    label: str
+    secret: bool = False
+    required: bool = False
+    default: str | None = None
+    help: str | None = None
 
 
-def _secret(name: str) -> dict[str, Any]:
-    record = get_store().get(name) or {}
-    if not record.get("token"):
-        raise ProviderConfigError(
-            f"Provider {name!r} is not configured. Add a token in Settings."
-        )
-    return record
+@runtime_checkable
+class Provider(Protocol):
+    slug: str
+    display_name: str
+    settings_schema: list[ProviderField]
 
+    def probe(self, secret: dict[str, Any]) -> tuple[bool, str]:
+        """Return ``(ready, detail)`` after a cheap probe of credentials."""
 
-def check_provider(name: ProviderName) -> tuple[bool, bool, str]:
-    """Return ``(configured, ready, detail)`` for the named provider."""
-    try:
-        secret = _secret(name.value)
-    except ProviderConfigError as exc:
-        return False, False, str(exc)
+    def make_estimator(self, secret: dict[str, Any]) -> Any:
+        """Build a Qiskit Estimator primitive bound to this provider."""
 
-    if name is ProviderName.QISKIT:
-        ready, detail = qiskit_provider.probe(secret)
-    elif name is ProviderName.BRAKET:
-        ready, detail = braket_provider.probe(secret)
-    else:  # pragma: no cover — exhaustive enum
-        raise ValueError(name)
-
-    return True, ready, detail
-
-
-def build_estimator_factory(name: ProviderName) -> Callable[[Any], Any]:
-    secret = _secret(name.value)
-    if name is ProviderName.QISKIT:
-        return qiskit_provider.estimator_factory(secret)
-    if name is ProviderName.BRAKET:
-        return braket_provider.estimator_factory(secret)
-    raise ValueError(name)  # pragma: no cover
+    def inspect_backend(self, estimator: Any) -> dict[str, Any]:
+        """Return a JSON-serialisable snapshot of backend metadata
+        (calibration, supported error-mitigation options, etc.) for
+        attachment to OpenTelemetry spans."""
