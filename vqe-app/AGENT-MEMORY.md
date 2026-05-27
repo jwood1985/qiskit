@@ -1,0 +1,258 @@
+# AGENT-MEMORY.md
+
+Task-based progress journal. New entries appended after each completed task.
+Format: one block per task with status, decisions, justification, and code
+pointers.
+
+---
+
+## Completed tasks
+
+### A0. Initial app scaffold (under previous CLAUDE.md)
+
+- Stood up FastAPI backend + React/Vite frontend under `vqe-app/`.
+- Three routers: `/api/settings`, `/api/providers`, `/api/vqe`.
+- VQE pipeline: PySCF / qiskit-nature → Jordan–Wigner → UCCSD or
+  EfficientSU2 → SciPy COBYLA → Qiskit Estimator primitive.
+- 13 pytest cases covering every exposed endpoint.
+- Frontend: F-pattern layout, fixed top navbar, Home + Settings.
+
+Code lives at: `vqe-app/backend/`, `vqe-app/frontend/`.
+
+### A1. Project documents updated to new CLAUDE.md
+
+- Replaced `vqe-app/CLAUDE.md` with the user-supplied refresh.
+- Created this `AGENT-MEMORY.md` per the new persistence rule (progress
+  no longer goes in `CLAUDE.md`).
+- Created `vqe-app/GAPS.md` populated with the first concrete set of
+  classical-quantum boundary observability gaps (not stubs).
+
+---
+
+### A2. Phase B — provider interface refactor
+
+- `app/providers/base.py` now defines a `Provider` Protocol + a Pydantic
+  `ProviderField` so each provider declares its own form schema.
+- `app/providers/registry.py` holds a slug → Provider dict; the package
+  `__init__` imports each adapter so it self-registers on import.
+- `QiskitProvider` and `BraketProvider` rewritten as classes
+  implementing the protocol. Heavy imports are still deferred inside
+  methods so the package loads in test environments without the wheels.
+- `models.py` dropped the `ProviderName` enum; provider slug is now a
+  free-form string validated at the route layer via
+  `providers.get(slug)`. `SettingsView` / `SettingsPayload` regrouped
+  under a `providers: {slug: ...}` dict so adding a new provider needs
+  no schema edits.
+- Routes (`providers`, `settings`, `vqe`) all iterate the registry.
+  Grep verifies no provider-name branching outside the adapter modules.
+- 17 pytest cases pass (13 + 4 new, including
+  `test_new_provider_registers_without_touching_other_modules` which
+  drops a stub `StubAzure` class into the registry and asserts it
+  appears in `/api/providers` and `/api/settings` with zero edits to
+  other modules — that is the literal verification criterion for D4).
+
+**Known temporary breakage:** `frontend/src/api/client.ts` and the
+Settings/Home pages still reference the previous payload shape
+(`SettingsView { qiskit, braket, dynatrace }` instead of
+`{ providers: {slug: …}, dynatrace }`). The frontend type-checks because
+the types are declared locally and don't depend on the backend at
+compile time, but the live `fetch` calls would mis-parse the response.
+This is intentional: Phase E rewrites the frontend client + pages to
+consume the new dynamic schema, so fixing this in Phase B would be
+throwaway work.
+
+---
+
+### A3. Phase C — simulator default + opt-in real hardware (backend)
+
+- `Provider.make_estimator` now takes a `simulator: bool` keyword.
+- `QiskitProvider`: simulator path → `AerSimulator` via
+  `BackendEstimator`. No credentials needed.
+- `BraketProvider`: simulator path → `BraketLocalBackend` via
+  `BackendEstimator`. No AWS creds, no quota.
+- `VQERunRequest` gains `use_real_hardware: bool = False`. The route
+  layer only enforces the token check when this flag is set.
+- Runner accepts `use_real_hardware` and stamps it on the `vqe.run`
+  span for telemetry attribution.
+- `qiskit-aer>=0.14` added to `pyproject.toml`.
+- Tests: `test_simulator_run_does_not_require_credentials` covers the
+  new default path; the prior credentials-required test is now scoped
+  to real hardware (`test_real_hardware_run_requires_credentials`).
+- 18/18 pass.
+
+UI toggle for `use_real_hardware` (with credit-burn warning) is
+deferred to Phase E.
+
+---
+
+### A4. Phase D — async lifecycle + expanded telemetry
+
+- `app/providers/base.py` adds a normalised `JobSnapshot` dataclass
+  + `JobState` literal type. Each provider implements `snapshot_job`
+  that maps its native job state vocabulary into the canonical
+  `submitted | queued | running | completed | failed` set (mapping
+  imperfections logged on each span as `raw_state`, per GAPS.md §4.1).
+- `QiskitProvider.snapshot_job` extracts `queue_time_s` and
+  `execution_time_s` from `job.metrics().timestamps`. Backend name is
+  read from the job when exposed.
+- `BraketProvider.snapshot_job` is intentionally lean — see GAPS.md
+  §1.2 for why timings aren't available through the qiskit-braket shim.
+- Runner rewritten with the OTel span hierarchy
+  ``vqe.run → vqe.iteration → quantum.job``. Each iteration submits,
+  polls `snapshot_job` at 500 ms (configurable), emits a span event on
+  every state transition, and stamps queue / exec time / shots /
+  mitigation / backend on the terminal span. New histograms
+  `vqe.quantum.queue_time_s` and `vqe.quantum.execution_time_s`.
+- `VQERunStatus` gains `current_job_state` and `last_job_snapshot` so
+  the UI can render queue/run progress while the optimizer iterates
+  — without polling-side blocking. `routes/vqe.py` wires an
+  `on_job_event` callback that updates these fields on every
+  transition.
+- `app/telemetry.py`: `configure_telemetry` now short-circuits when
+  already initialised, silencing 403 export errors in tests.
+- Tests added: `test_runner.py` (2 cases) exercises the polling loop
+  directly with a fake provider that walks queued → running →
+  completed, and verifies a failed job raises. `test_vqe_api.py` adds
+  an integration case asserting lifecycle events surface to the run
+  status via the HTTP API.
+- 21/21 pass.
+
+---
+
+### A5. Phase E — dashboard UI, sidebar, GAPS dashboard, dynamic forms
+
+- Backend: new `/api/gaps` endpoint reads `vqe-app/GAPS.md` from disk
+  and returns its markdown body. New `tests/test_gaps_api.py` asserts
+  the response starts with the expected H1. 22/22 backend tests pass.
+- Frontend layout switched from F-pattern to dashboard-grid: a slim
+  top navbar (brand only) + 220 px left sidebar + dense card grid in
+  the main area. Information density prioritised per CLAUDE.md.
+- New `<Sidebar />` with Workspace (Home, Settings) and Observability
+  (GAPS dashboard) sections.
+- New `<GapsDashboard />` page fetches `/api/gaps` and renders the
+  markdown via `react-markdown` + `remark-gfm` (tables).
+- `<Settings />` rewritten to render provider forms dynamically from
+  each provider's `settings_schema`. A new provider in the backend
+  registry appears here automatically — zero edits required.
+- `<Home />` updated:
+  - Provider list now driven by `/api/providers` (no hard-coded
+    Qiskit/Braket switch).
+  - New "Use real hardware" checkbox with a credit-burn warning card,
+    default off (simulator).
+  - New "Quantum job lifecycle" panel surfaces
+    `current_job_state` + `last_job_snapshot` from the run status
+    (backend, queue/exec time, shots, raw provider state).
+- `client.ts` rewritten for the new payload shapes (providers map,
+  JobSnapshot, gaps endpoint).
+- `theme.css` rewritten for the dashboard-grid layout with
+  high-contrast focus rings and markdown styling.
+- Frontend type-checks and builds (336 KB JS, 105 KB gzipped — growth
+  comes entirely from react-markdown + remark-gfm).
+
+---
+
+### A6. Phase F — README refresh
+
+- README rewritten to reflect the post-reconciliation state:
+  simulator-default with opt-in real hardware, dynamic provider
+  registry as the extensibility story, GAPS dashboard as a
+  first-class deliverable, AGENT-MEMORY pointer, list of all four
+  project documents and what each is for.
+- API endpoints table updated with `/api/gaps`.
+- Quick Start no longer requires tokens upfront.
+- Layout section refreshed to show the dashboard-grid frontend
+  structure.
+
+---
+
+## In-progress task
+
+(none — all six phases A–F complete and pushed)
+
+---
+
+## Decisions made and their justifications
+
+### D1. Subfolder location `vqe-app/`
+
+The host repo is Qiskit itself. Putting our app at the actual git repo
+root would conflict with Qiskit's own README/CLAUDE/etc. Confirmed with
+user; "repo root" in the new CLAUDE.md is interpreted as `vqe-app/`.
+
+### D2. **Conscious deviation: keep Fernet-encrypted file store, not OS keychain**
+
+The new `CLAUDE.md` (Project-Specific Guidelines, bullet 4) states tokens
+"shall be stored via OS keychain (or equivalent platform-native secure
+storage), never in plaintext config files or environment variables
+committed to source."
+
+User explicitly chose to **keep the Fernet-encrypted file at
+`~/.vqe-app/secrets.enc`** when offered the keyring swap. This deviates
+from the new guideline. Justification:
+
+- The Fernet ciphertext on disk is not plaintext; the literal rule
+  forbids "plaintext config files or environment variables committed to
+  source" — neither applies to our encrypted file.
+- `keyring` does not work in headless containers without dbus, which
+  blocks the most common dev/CI environment for this app.
+- User accepted the tradeoff with eyes open after the option was
+  presented in writing.
+
+This deviation is also logged in `GAPS.md` (Section "Project deviations
+from policy") so it remains visible to anyone auditing the project.
+
+### D3. Simulator-by-default + opt-in real hardware
+
+The new doc reverses the earlier "real credentials required" choice.
+User confirmed the override. Implementation strategy (Phase C):
+
+- `VQERunRequest` gains `use_real_hardware: bool = False`.
+- Each provider exposes both a simulator path (Aer / LocalSimulator) and
+  a hardware path; switch keyed on the request flag.
+- Tokens become optional unless `use_real_hardware=True`.
+- UI surfaces a checkbox with a credit-burn warning.
+
+### D4. Provider abstraction at a strict boundary
+
+CLAUDE.md guideline: "no provider-specific code outside that boundary".
+Plan:
+
+- `app/providers/base.py` defines a `Provider` Protocol with `slug`,
+  `display_name`, `settings_schema`, `probe`, `make_estimator`,
+  `inspect_backend`.
+- `app/providers/registry.py` registers each concrete provider.
+- Routes and runner reference providers via the registry only.
+- Settings page renders forms dynamically from each provider's
+  `settings_schema`, so adding a new provider in the backend
+  auto-appears in the UI with zero frontend changes.
+
+### D5. HTTP polling instead of websockets
+
+For iteration cadence on the order of seconds, websockets add transport
+complexity without UX benefit. The frontend polls `/api/vqe/runs/{id}`
+at 750 ms while a run is active. This is documented under "Out of
+scope" in the plan and chosen per Simplicity First.
+
+---
+
+## Blockers
+
+(none currently)
+
+---
+
+## Code pointers
+
+| Area | Location |
+| --- | --- |
+| FastAPI entrypoint | `backend/app/main.py` |
+| Routers | `backend/app/routes/{settings,providers,vqe}.py` |
+| Secrets store (Fernet) | `backend/app/secrets_store.py` |
+| OpenTelemetry setup | `backend/app/telemetry.py` |
+| VQE pipeline | `backend/app/vqe/{hamiltonian,ansatz,runner}.py` |
+| Provider adapters | `backend/app/providers/{qiskit,braket}_provider.py` |
+| Backend tests | `backend/tests/test_{health,settings,providers,vqe}_api.py` |
+| Frontend entry | `frontend/src/main.tsx` |
+| Pages | `frontend/src/pages/{Home,Settings}.tsx` |
+| API client | `frontend/src/api/client.ts` |
+| Theme | `frontend/src/theme.css` |
