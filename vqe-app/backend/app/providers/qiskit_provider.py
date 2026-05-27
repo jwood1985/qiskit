@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from .base import Provider, ProviderField
+from .base import JobSnapshot, JobState, Provider, ProviderField
 from .registry import register
 
 logger = logging.getLogger(__name__)
@@ -88,6 +88,54 @@ class QiskitProvider:
             "num_qubits": getattr(backend, "num_qubits", None),
             "calibration_snapshot": "backend.target (point-in-time)",
         }
+
+    # Native QiskitJobStatus → canonical state. See GAPS.md §4.1.
+    _STATE_MAP: dict[str, JobState] = {
+        "INITIALIZING": "submitted",
+        "QUEUED": "queued",
+        "VALIDATING": "queued",
+        "RUNNING": "running",
+        "DONE": "completed",
+        "COMPLETED": "completed",
+        "ERROR": "failed",
+        "CANCELLED": "failed",
+        "FAILED": "failed",
+    }
+
+    def snapshot_job(self, job: Any) -> JobSnapshot:
+        raw = "UNKNOWN"
+        try:
+            status = job.status()
+            raw = status.name if hasattr(status, "name") else str(status)
+        except Exception:  # pragma: no cover — defensive
+            pass
+        state = self._STATE_MAP.get(raw, "running")
+
+        queue_time = exec_time = None
+        try:
+            metrics = job.metrics() or {}
+            ts = metrics.get("timestamps", {}) or {}
+            if ts.get("running") and ts.get("created"):
+                queue_time = float(ts["running"]) - float(ts["created"])
+            if ts.get("finished") and ts.get("running"):
+                exec_time = float(ts["finished"]) - float(ts["running"])
+        except Exception:  # pragma: no cover — metrics not always available
+            pass
+
+        # Backend name from the job object when available.
+        backend = None
+        try:
+            backend = job.backend().name  # type: ignore[attr-defined]
+        except Exception:
+            pass
+
+        return JobSnapshot(
+            state=state,
+            raw_state=raw,
+            queue_time_s=queue_time,
+            execution_time_s=exec_time,
+            backend=backend,
+        )
 
 
 register(QiskitProvider())

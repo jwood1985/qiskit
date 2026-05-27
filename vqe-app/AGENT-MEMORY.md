@@ -85,10 +85,44 @@ deferred to Phase E.
 
 ---
 
+### A4. Phase D — async lifecycle + expanded telemetry
+
+- `app/providers/base.py` adds a normalised `JobSnapshot` dataclass
+  + `JobState` literal type. Each provider implements `snapshot_job`
+  that maps its native job state vocabulary into the canonical
+  `submitted | queued | running | completed | failed` set (mapping
+  imperfections logged on each span as `raw_state`, per GAPS.md §4.1).
+- `QiskitProvider.snapshot_job` extracts `queue_time_s` and
+  `execution_time_s` from `job.metrics().timestamps`. Backend name is
+  read from the job when exposed.
+- `BraketProvider.snapshot_job` is intentionally lean — see GAPS.md
+  §1.2 for why timings aren't available through the qiskit-braket shim.
+- Runner rewritten with the OTel span hierarchy
+  ``vqe.run → vqe.iteration → quantum.job``. Each iteration submits,
+  polls `snapshot_job` at 500 ms (configurable), emits a span event on
+  every state transition, and stamps queue / exec time / shots /
+  mitigation / backend on the terminal span. New histograms
+  `vqe.quantum.queue_time_s` and `vqe.quantum.execution_time_s`.
+- `VQERunStatus` gains `current_job_state` and `last_job_snapshot` so
+  the UI can render queue/run progress while the optimizer iterates
+  — without polling-side blocking. `routes/vqe.py` wires an
+  `on_job_event` callback that updates these fields on every
+  transition.
+- `app/telemetry.py`: `configure_telemetry` now short-circuits when
+  already initialised, silencing 403 export errors in tests.
+- Tests added: `test_runner.py` (2 cases) exercises the polling loop
+  directly with a fake provider that walks queued → running →
+  completed, and verifies a failed job raises. `test_vqe_api.py` adds
+  an integration case asserting lifecycle events surface to the run
+  status via the HTTP API.
+- 21/21 pass.
+
+---
+
 ## In-progress task
 
-(none — Phase C backend complete, awaiting Phase D: async lifecycle +
-expanded telemetry)
+(none — Phase D complete, awaiting Phase E: dashboard-grid UI, sidebar
+nav, GAPS dashboard, dynamic Settings forms, real-hardware toggle)
 
 ---
 

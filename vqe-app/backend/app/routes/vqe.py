@@ -8,7 +8,7 @@ from typing import Any, Callable
 
 from fastapi import APIRouter, HTTPException
 
-from ..models import VQEIteration, VQERunRequest, VQERunStatus
+from ..models import JobSnapshotPayload, VQEIteration, VQERunRequest, VQERunStatus
 from ..providers import UnknownProvider, get as get_provider
 from ..secrets_store import get_store
 from ..vqe.runner import run_vqe
@@ -56,6 +56,7 @@ def _build_estimator_factory(slug: str, *, use_real_hardware: bool) -> Callable[
 
 def _execute(run_id: str, req: VQERunRequest) -> None:
     try:
+        provider = get_provider(req.provider)
         estimator_factory = _build_estimator_factory(
             req.provider, use_real_hardware=req.use_real_hardware
         )
@@ -71,15 +72,20 @@ def _execute(run_id: str, req: VQERunRequest) -> None:
                 update={"iterations": current.iterations + [it]}
             )
 
+    def on_job_event(snapshot: JobSnapshotPayload) -> None:
+        _set(run_id, current_job_state=snapshot.state, last_job_snapshot=snapshot)
+
     try:
         _set(run_id, state="running")
         result = _runner_factory()(
             molecule=req.molecule,
-            provider=req.provider,
+            provider_slug=req.provider,
+            provider=provider,
             ansatz_kind=req.ansatz,
             max_iter=req.max_iter,
             estimator_factory=estimator_factory,
             on_iteration=on_iteration,
+            on_job_event=on_job_event,
             use_real_hardware=req.use_real_hardware,
         )
         _set(run_id, state="succeeded", final_energy=result.final_energy)

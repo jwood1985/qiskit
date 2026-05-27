@@ -6,7 +6,7 @@ import os
 from contextlib import contextmanager
 from typing import Any, Iterator
 
-from .base import Provider, ProviderField
+from .base import JobSnapshot, JobState, Provider, ProviderField
 from .registry import register
 
 logger = logging.getLogger(__name__)
@@ -111,6 +111,38 @@ class BraketProvider:
             "backend": getattr(backend, "name", "unknown"),
             "calibration_snapshot": "device.properties (point-in-time)",
         }
+
+    # See GAPS.md §4.1 for the Braket state vocabulary we map from.
+    _STATE_MAP: dict[str, JobState] = {
+        "INITIALIZING": "submitted",
+        "CREATED": "submitted",
+        "QUEUED": "queued",
+        "RUNNING": "running",
+        "COMPLETED": "completed",
+        "DONE": "completed",
+        "FAILED": "failed",
+        "CANCELLED": "failed",
+    }
+
+    def snapshot_job(self, job: Any) -> JobSnapshot:
+        """Limited by GAPS.md §1.2 — the qiskit-braket shim hides queue
+        / execution timings on QuantumTask. We surface state and (when
+        we can reach it) the backend name."""
+        raw = "UNKNOWN"
+        try:
+            status = job.status()
+            raw = status.name if hasattr(status, "name") else str(status)
+        except Exception:  # pragma: no cover
+            pass
+        state = self._STATE_MAP.get(raw, "running")
+
+        backend = None
+        try:
+            backend = job.backend().name  # type: ignore[attr-defined]
+        except Exception:
+            pass
+
+        return JobSnapshot(state=state, raw_state=raw, backend=backend)
 
 
 register(BraketProvider())

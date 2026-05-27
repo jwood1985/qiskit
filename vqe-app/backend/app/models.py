@@ -7,7 +7,7 @@ the registry — there is no enum to update when a new provider is added.
 from __future__ import annotations
 
 from enum import Enum
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -91,6 +91,21 @@ class VQEIteration(BaseModel):
     energy: float
 
 
+class JobSnapshotPayload(BaseModel):
+    """UI-facing view of the most recent quantum-job state change. Mirrors
+    :class:`app.providers.base.JobSnapshot`. Many fields are optional
+    because providers vary in what they expose (see GAPS.md)."""
+
+    state: str
+    raw_state: str | None = None
+    queue_time_s: float | None = None
+    execution_time_s: float | None = None
+    shots: int | None = None
+    backend: str | None = None
+    error_mitigation: dict[str, Any] | None = None
+    calibration: dict[str, Any] | None = None
+
+
 class VQERunStatus(BaseModel):
     id: str
     state: Literal["pending", "running", "succeeded", "failed"]
@@ -100,3 +115,7 @@ class VQERunStatus(BaseModel):
     iterations: list[VQEIteration] = Field(default_factory=list)
     final_energy: float | None = None
     error: str | None = None
+    # Live view of the most recent quantum-job state change so the UI can
+    # render queue/run progress while the optimizer iterates.
+    current_job_state: str | None = None
+    last_job_snapshot: JobSnapshotPayload | None = None

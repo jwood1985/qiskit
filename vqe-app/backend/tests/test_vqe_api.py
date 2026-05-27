@@ -43,8 +43,9 @@ def test_simulator_run_does_not_require_credentials(client, monkeypatch):
         lambda self, secret, *, simulator: None,
     )
 
-    def fake_runner(*, molecule, provider, ansatz_kind, max_iter,
-                    estimator_factory, on_iteration, use_real_hardware):
+    def fake_runner(*, molecule, provider_slug, provider, ansatz_kind, max_iter,
+                    estimator_factory, on_iteration, on_job_event,
+                    use_real_hardware):
         # Confirm the simulator switch reached the factory closure.
         estimator_factory(None)
         assert use_real_hardware is False
@@ -76,8 +77,9 @@ def test_run_drives_runner_and_returns_energy(client, monkeypatch):
         json={"providers": {"qiskit": {"token": "tok-runner-test-9999"}}},
     )
 
-    def fake_runner(*, molecule, provider, ansatz_kind, max_iter,
-                    estimator_factory, on_iteration, use_real_hardware):
+    def fake_runner(*, molecule, provider_slug, provider, ansatz_kind, max_iter,
+                    estimator_factory, on_iteration, on_job_event,
+                    use_real_hardware):
         for i in range(1, 4):
             on_iteration(VQEIteration(iteration=i, energy=-7.86 + 0.01 * (3 - i)))
         return VQEResult(
@@ -146,3 +148,45 @@ def test_run_request_validates_molecule(client):
         json={"molecule": "NaCl", "provider": "qiskit"},
     )
     assert response.status_code == 422
+
+
+def test_job_lifecycle_events_surface_to_run_status(client, monkeypatch):
+    """The runner emits on_job_event for each state transition; those
+    must reach the run record so the UI can render queue/run progress
+    without blocking. This is the verification criterion for Phase D.
+    """
+    from app.models import JobSnapshotPayload
+
+    def fake_runner(*, molecule, provider_slug, provider, ansatz_kind,
+                    max_iter, estimator_factory, on_iteration,
+                    on_job_event, use_real_hardware):
+        # Walk through the canonical state vocabulary one transition at
+        # a time so we can observe each one surface to the API.
+        for state, queue_t, exec_t in [
+            ("submitted", None, None),
+            ("queued", None, None),
+            ("running", 3.2, None),
+            ("completed", 3.2, 1.7),
+        ]:
+            on_job_event(JobSnapshotPayload(
+                state=state, queue_time_s=queue_t, execution_time_s=exec_t,
+                backend="ibm_kyiv", shots=4096,
+            ))
+            time.sleep(0.02)  # let the API observer pick the change up
+        return VQEResult(
+            iterations=[], final_energy=-7.882,
+            nuclear_repulsion=0.992, hf_energy=-7.85,
+        )
+
+    monkeypatch.setattr("app.routes.vqe._runner_factory", lambda: fake_runner)
+
+    response = client.post(
+        "/api/vqe/run",
+        json={"molecule": "LiH", "provider": "qiskit", "ansatz": "UCCSD"},
+    )
+    final = _wait_for(client, response.json()["id"], "succeeded")
+    assert final["current_job_state"] == "completed"
+    assert final["last_job_snapshot"]["backend"] == "ibm_kyiv"
+    assert final["last_job_snapshot"]["queue_time_s"] == 3.2
+    assert final["last_job_snapshot"]["execution_time_s"] == 1.7
+    assert final["last_job_snapshot"]["shots"] == 4096

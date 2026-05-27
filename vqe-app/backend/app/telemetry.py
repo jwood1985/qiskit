@@ -39,6 +39,8 @@ def configure_telemetry() -> None:
     saving a new token in Settings takes effect on the next VQE run.
     """
     global _initialised
+    if _initialised:
+        return
     cfg = get_config()
     token = _dynatrace_token()
     headers = {"Authorization": f"Api-Token {token}"} if token else {}
