@@ -151,9 +151,23 @@ deferred to Phase E.
 
 ---
 
+### A6. Phase F — README refresh
+
+- README rewritten to reflect the post-reconciliation state:
+  simulator-default with opt-in real hardware, dynamic provider
+  registry as the extensibility story, GAPS dashboard as a
+  first-class deliverable, AGENT-MEMORY pointer, list of all four
+  project documents and what each is for.
+- API endpoints table updated with `/api/gaps`.
+- Quick Start no longer requires tokens upfront.
+- Layout section refreshed to show the dashboard-grid frontend
+  structure.
+
+---
+
 ## In-progress task
 
-(none — Phase E complete, awaiting Phase F: README refresh)
+(none — all six phases A–F complete and pushed)
 
 ---
 
