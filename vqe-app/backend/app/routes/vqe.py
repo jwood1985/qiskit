@@ -32,30 +32,33 @@ def _runner_factory() -> Callable:
     return run_vqe
 
 
-def _build_estimator_factory(slug: str) -> Callable[[Any], Any]:
+def _build_estimator_factory(slug: str, *, use_real_hardware: bool) -> Callable[[Any], Any]:
     """Build a (ansatz) -> Estimator factory for the named provider.
 
-    Looks the provider up in the registry, pulls the persisted secret,
-    and returns a closure the runner can invoke. Real credentials are
-    required at this phase (Phase B); Phase C introduces simulator
-    fallback.
+    Credentials are only required when the caller opts into real
+    hardware. Simulator runs work out of the box with an empty secrets
+    store — that's the development default per CLAUDE.md.
     """
     provider = get_provider(slug)
     secret = get_store().get(slug) or {}
-    if not secret.get("token"):
+    if use_real_hardware and not secret.get("token"):
         raise RuntimeError(
-            f"Provider {slug!r} is not configured. Add a token in Settings."
+            f"Real-hardware run requested but provider {slug!r} has no "
+            "token configured. Add one in Settings or unset "
+            "`use_real_hardware`."
         )
 
     def factory(_ansatz: Any) -> Any:
-        return provider.make_estimator(secret)
+        return provider.make_estimator(secret, simulator=not use_real_hardware)
 
     return factory
 
 
 def _execute(run_id: str, req: VQERunRequest) -> None:
     try:
-        estimator_factory = _build_estimator_factory(req.provider)
+        estimator_factory = _build_estimator_factory(
+            req.provider, use_real_hardware=req.use_real_hardware
+        )
     except (RuntimeError, UnknownProvider) as exc:
         logger.warning("VQE run %s aborted: %s", run_id, exc)
         _set(run_id, state="failed", error=str(exc))
@@ -77,6 +80,7 @@ def _execute(run_id: str, req: VQERunRequest) -> None:
             max_iter=req.max_iter,
             estimator_factory=estimator_factory,
             on_iteration=on_iteration,
+            use_real_hardware=req.use_real_hardware,
         )
         _set(run_id, state="succeeded", final_energy=result.final_energy)
     except Exception as exc:

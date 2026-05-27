@@ -41,6 +41,7 @@ def run_vqe(
     max_iter: int,
     estimator_factory: Callable[[Any], Any],
     on_iteration: Callable[[VQEIteration], None] | None = None,
+    use_real_hardware: bool = False,
 ) -> VQEResult:
     """Run VQE end-to-end.
 
@@ -65,6 +66,7 @@ def run_vqe(
         span.set_attribute("vqe.provider", provider)
         span.set_attribute("vqe.ansatz", ansatz_kind.value)
         span.set_attribute("vqe.max_iter", max_iter)
+        span.set_attribute("vqe.use_real_hardware", use_real_hardware)
 
         problem = build_problem(molecule)
         ansatz = build_ansatz(problem, ansatz_kind)

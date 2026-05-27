@@ -20,6 +20,7 @@ def _install_qiskit_stubs() -> None:
         "qiskit.primitives",
         "qiskit.circuit",
         "qiskit.circuit.library",
+        "qiskit_aer",
         "qiskit_nature",
         "qiskit_nature.second_q",
         "qiskit_nature.second_q.drivers",
@@ -54,6 +55,8 @@ def _install_qiskit_stubs() -> None:
             return None
 
     sys.modules["qiskit_braket_provider"].BraketProvider = _BraketProvider
+    sys.modules["qiskit_braket_provider"].BraketLocalBackend = lambda *a, **k: None
+    sys.modules["qiskit_aer"].AerSimulator = lambda *a, **k: None
 
 
 _install_qiskit_stubs()

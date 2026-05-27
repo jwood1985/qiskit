@@ -19,15 +19,47 @@ def _wait_for(client, run_id: str, target_state: str, timeout: float = 5.0) -> d
     raise AssertionError(f"run {run_id} never reached state {target_state}: {body}")
 
 
-def test_run_requires_provider_credentials(client):
+def test_real_hardware_run_requires_credentials(client):
     response = client.post(
         "/api/vqe/run",
-        json={"molecule": "LiH", "provider": "qiskit", "ansatz": "UCCSD"},
+        json={
+            "molecule": "LiH",
+            "provider": "qiskit",
+            "ansatz": "UCCSD",
+            "use_real_hardware": True,
+        },
     )
     assert response.status_code == 202
     body = response.json()
     final = _wait_for(client, body["id"], "failed")
-    assert "not configured" in final["error"].lower()
+    assert "no token configured" in final["error"].lower()
+
+
+def test_simulator_run_does_not_require_credentials(client, monkeypatch):
+    """Simulator is the dev default — must work with an empty secrets
+    store and no UI configuration."""
+    monkeypatch.setattr(
+        "app.providers.qiskit_provider.QiskitProvider.make_estimator",
+        lambda self, secret, *, simulator: None,
+    )
+
+    def fake_runner(*, molecule, provider, ansatz_kind, max_iter,
+                    estimator_factory, on_iteration, use_real_hardware):
+        # Confirm the simulator switch reached the factory closure.
+        estimator_factory(None)
+        assert use_real_hardware is False
+        return VQEResult(iterations=[], final_energy=-1.123,
+                         nuclear_repulsion=0.0, hf_energy=-1.0)
+
+    monkeypatch.setattr("app.routes.vqe._runner_factory", lambda: fake_runner)
+
+    response = client.post(
+        "/api/vqe/run",
+        json={"molecule": "H2", "provider": "qiskit", "ansatz": "EfficientSU2"},
+    )
+    assert response.status_code == 202
+    final = _wait_for(client, response.json()["id"], "succeeded")
+    assert final["final_energy"] == -1.123
 
 
 def test_run_rejects_unknown_provider(client):
@@ -44,7 +76,8 @@ def test_run_drives_runner_and_returns_energy(client, monkeypatch):
         json={"providers": {"qiskit": {"token": "tok-runner-test-9999"}}},
     )
 
-    def fake_runner(*, molecule, provider, ansatz_kind, max_iter, estimator_factory, on_iteration):
+    def fake_runner(*, molecule, provider, ansatz_kind, max_iter,
+                    estimator_factory, on_iteration, use_real_hardware):
         for i in range(1, 4):
             on_iteration(VQEIteration(iteration=i, energy=-7.86 + 0.01 * (3 - i)))
         return VQEResult(
@@ -57,12 +90,18 @@ def test_run_drives_runner_and_returns_energy(client, monkeypatch):
     monkeypatch.setattr("app.routes.vqe._runner_factory", lambda: fake_runner)
     monkeypatch.setattr(
         "app.providers.qiskit_provider.QiskitProvider.make_estimator",
-        lambda self, secret: None,
+        lambda self, secret, *, simulator: None,
     )
 
     response = client.post(
         "/api/vqe/run",
-        json={"molecule": "LiH", "provider": "qiskit", "ansatz": "UCCSD", "max_iter": 5},
+        json={
+            "molecule": "LiH",
+            "provider": "qiskit",
+            "ansatz": "UCCSD",
+            "max_iter": 5,
+            "use_real_hardware": True,
+        },
     )
     assert response.status_code == 202
     run_id = response.json()["id"]
@@ -80,7 +119,7 @@ def test_runner_exception_marks_run_failed(client, monkeypatch):
     )
     monkeypatch.setattr(
         "app.providers.qiskit_provider.QiskitProvider.make_estimator",
-        lambda self, secret: None,
+        lambda self, secret, *, simulator: None,
     )
 
     def boom(**_kwargs):

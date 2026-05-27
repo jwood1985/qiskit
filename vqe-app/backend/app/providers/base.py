@@ -46,8 +46,14 @@ class Provider(Protocol):
     def probe(self, secret: dict[str, Any]) -> tuple[bool, str]:
         """Return ``(ready, detail)`` after a cheap probe of credentials."""
 
-    def make_estimator(self, secret: dict[str, Any]) -> Any:
-        """Build a Qiskit Estimator primitive bound to this provider."""
+    def make_estimator(self, secret: dict[str, Any], *, simulator: bool) -> Any:
+        """Build a Qiskit Estimator primitive bound to this provider.
+
+        ``simulator=True`` is the development default and must work
+        without credentials (Aer / Braket LocalSimulator). ``False``
+        opts into real hardware and may require valid tokens in
+        ``secret``.
+        """
 
     def inspect_backend(self, estimator: Any) -> dict[str, Any]:
         """Return a JSON-serialisable snapshot of backend metadata

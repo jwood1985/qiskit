@@ -22,6 +22,7 @@ dependencies = [
     "opentelemetry-instrumentation-fastapi>=0.45b0",
     # Quantum providers
     "qiskit>=1.0",
+    "qiskit-aer>=0.14",
     "qiskit-nature>=0.7",
     "qiskit-ibm-runtime>=0.23",
     "pyscf>=2.5",

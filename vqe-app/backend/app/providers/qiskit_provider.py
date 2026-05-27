@@ -59,7 +59,15 @@ class QiskitProvider:
             return False, "Authenticated but no operational backends visible."
         return True, "Backends available: " + ", ".join(b.name for b in backends[:3])
 
-    def make_estimator(self, secret: dict[str, Any]) -> Any:
+    def make_estimator(self, secret: dict[str, Any], *, simulator: bool) -> Any:
+        if simulator:
+            # Local AerSimulator wrapped in BackendEstimator. No
+            # credentials needed; this is the dev/test default.
+            from qiskit.primitives import BackendEstimator
+            from qiskit_aer import AerSimulator
+
+            return BackendEstimator(backend=AerSimulator())
+
         from qiskit_ibm_runtime import EstimatorV2, Session
 
         service = self._service(secret)

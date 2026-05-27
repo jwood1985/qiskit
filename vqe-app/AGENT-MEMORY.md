@@ -63,10 +63,32 @@ throwaway work.
 
 ---
 
+### A3. Phase C — simulator default + opt-in real hardware (backend)
+
+- `Provider.make_estimator` now takes a `simulator: bool` keyword.
+- `QiskitProvider`: simulator path → `AerSimulator` via
+  `BackendEstimator`. No credentials needed.
+- `BraketProvider`: simulator path → `BraketLocalBackend` via
+  `BackendEstimator`. No AWS creds, no quota.
+- `VQERunRequest` gains `use_real_hardware: bool = False`. The route
+  layer only enforces the token check when this flag is set.
+- Runner accepts `use_real_hardware` and stamps it on the `vqe.run`
+  span for telemetry attribution.
+- `qiskit-aer>=0.14` added to `pyproject.toml`.
+- Tests: `test_simulator_run_does_not_require_credentials` covers the
+  new default path; the prior credentials-required test is now scoped
+  to real hardware (`test_real_hardware_run_requires_credentials`).
+- 18/18 pass.
+
+UI toggle for `use_real_hardware` (with credit-burn warning) is
+deferred to Phase E.
+
+---
+
 ## In-progress task
 
-(none — Phase B complete, awaiting Phase C: simulator default + opt-in
-real hardware)
+(none — Phase C backend complete, awaiting Phase D: async lifecycle +
+expanded telemetry)
 
 ---
 

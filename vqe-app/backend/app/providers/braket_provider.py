@@ -82,8 +82,16 @@ class BraketProvider:
             return False, "Authenticated but no Braket devices visible."
         return True, "Backends available: " + ", ".join(b.name for b in backends[:3])
 
-    def make_estimator(self, secret: dict[str, Any]) -> Any:
+    def make_estimator(self, secret: dict[str, Any], *, simulator: bool) -> Any:
         from qiskit.primitives import BackendEstimator
+
+        if simulator:
+            # qiskit_braket_provider's BraketLocalBackend wraps
+            # braket.devices.LocalSimulator. No AWS creds, no quota.
+            from qiskit_braket_provider import BraketLocalBackend
+
+            return BackendEstimator(backend=BraketLocalBackend())
+
         from qiskit_braket_provider import BraketProvider as _BraketProvider
 
         device_name = (secret.get("extra") or {}).get("device", "SV1")

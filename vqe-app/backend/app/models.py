@@ -81,6 +81,9 @@ class VQERunRequest(BaseModel):
     provider: str = "qiskit"
     ansatz: AnsatzName = AnsatzName.UCCSD
     max_iter: int = Field(default=80, ge=1, le=2000)
+    # Simulator is the dev/test default. Real hardware is opt-in and
+    # surfaced in the UI with a credit-burn warning.
+    use_real_hardware: bool = False
 
 
 class VQEIteration(BaseModel):
