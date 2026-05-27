@@ -1,0 +1,265 @@
+/*
+ * Color schema (from project guidelines):
+ *   #0D1B99  primary indigo
+ *   #FF7F27  accent orange
+ *   #060242  deep blue (text on light)
+ *   #C7C7C7  neutral gray (borders / muted)
+ *
+ * Layout follows an "F" pattern: bold left-aligned heading, primary
+ * content scanned top-to-bottom, secondary content stair-stepped right.
+ */
+
+:root {
+  --color-primary: #0d1b99;
+  --color-accent: #ff7f27;
+  --color-deep: #060242;
+  --color-muted: #c7c7c7;
+  --color-bg: #ffffff;
+  --color-surface: #f5f6fa;
+  --color-error: #b00020;
+  --color-success: #1f7a1f;
+
+  --space-1: 0.5rem;
+  --space-2: 1rem;
+  --space-3: 1.5rem;
+  --space-4: 2rem;
+
+  --radius: 6px;
+  --font-stack: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--color-bg);
+  color: var(--color-deep);
+  font-family: var(--font-stack);
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+/* Skip-link for keyboard users (accessibility). */
+.skip-link {
+  position: absolute;
+  top: -40px;
+  left: 0;
+  background: var(--color-primary);
+  color: #fff;
+  padding: var(--space-1) var(--space-2);
+  z-index: 100;
+}
+.skip-link:focus {
+  top: 0;
+}
+
+/* Fixed top navbar. */
+.navbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-1) var(--space-3);
+  background: var(--color-primary);
+  color: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+.navbar-brand {
+  font-weight: 700;
+  font-size: 1.15rem;
+  color: #fff;
+  text-decoration: none;
+}
+.navbar-brand .accent {
+  color: var(--color-accent);
+}
+.navbar-links {
+  display: flex;
+  gap: var(--space-3);
+}
+.navbar-links a {
+  color: #fff;
+  text-decoration: none;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius);
+}
+.navbar-links a.active,
+.navbar-links a:hover,
+.navbar-links a:focus-visible {
+  background: var(--color-deep);
+  outline: 2px solid var(--color-accent);
+  outline-offset: 0;
+}
+
+/* Main content sits below the fixed navbar. */
+.page {
+  padding: calc(var(--space-4) + 1rem) var(--space-4) var(--space-4);
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.page h1 {
+  color: var(--color-deep);
+  font-size: 1.75rem;
+  margin: 0 0 var(--space-2);
+}
+.page h2 {
+  color: var(--color-primary);
+  font-size: 1.2rem;
+  margin: var(--space-3) 0 var(--space-1);
+}
+
+.muted {
+  color: #555;
+}
+
+/* Form controls — high contrast for accessibility. */
+label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: var(--space-1);
+  color: var(--color-deep);
+}
+input[type="text"],
+input[type="password"],
+input[type="number"],
+select {
+  width: 100%;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--color-muted);
+  border-radius: var(--radius);
+  background: var(--color-bg);
+  color: var(--color-deep);
+  font: inherit;
+}
+input:focus-visible,
+select:focus-visible,
+button:focus-visible {
+  outline: 3px solid var(--color-accent);
+  outline-offset: 1px;
+  border-color: var(--color-primary);
+}
+
+button {
+  background: var(--color-accent);
+  color: #1a1100;
+  border: none;
+  border-radius: var(--radius);
+  padding: 0.65rem 1.1rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+button:hover {
+  filter: brightness(0.95);
+}
+button:disabled {
+  background: var(--color-muted);
+  color: #555;
+  cursor: not-allowed;
+}
+button.secondary {
+  background: var(--color-primary);
+  color: #fff;
+}
+
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-muted);
+  border-radius: var(--radius);
+  padding: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.row {
+  display: grid;
+  gap: var(--space-3);
+}
+@media (min-width: 720px) {
+  .row.cols-2 {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.kv {
+  display: grid;
+  grid-template-columns: 12rem 1fr;
+  gap: var(--space-1);
+  margin: var(--space-2) 0;
+}
+.kv dt {
+  font-weight: 600;
+}
+.kv dd {
+  margin: 0;
+  color: var(--color-deep);
+}
+
+.alert {
+  padding: var(--space-2);
+  border-radius: var(--radius);
+  margin: var(--space-2) 0;
+  border: 1px solid var(--color-muted);
+}
+.alert.error {
+  background: #fde7e9;
+  border-color: var(--color-error);
+  color: var(--color-error);
+}
+.alert.success {
+  background: #e7f5e7;
+  border-color: var(--color-success);
+  color: var(--color-success);
+}
+
+.pill {
+  display: inline-block;
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+  background: var(--color-muted);
+  color: var(--color-deep);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.pill.ok {
+  background: var(--color-success);
+  color: #fff;
+}
+.pill.warn {
+  background: var(--color-accent);
+  color: #1a1100;
+}
+.pill.bad {
+  background: var(--color-error);
+  color: #fff;
+}
+
+/* Energy trace SVG */
+.chart {
+  width: 100%;
+  height: 240px;
+  border: 1px solid var(--color-muted);
+  border-radius: var(--radius);
+  background: #fff;
+}
+.chart .axis {
+  stroke: var(--color-muted);
+}
+.chart .trace {
+  fill: none;
+  stroke: var(--color-primary);
+  stroke-width: 2;
+}
+.chart .point {
+  fill: var(--color-accent);
+}

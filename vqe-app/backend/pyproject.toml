@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vqe-app-backend"
+version = "0.1.0"
+description = "VQE telemetry backend for LiH/H2 across Qiskit and Braket providers"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "pydantic>=2.6",
+    "pydantic-settings>=2.2",
+    "cryptography>=42",
+    "numpy>=1.24",
+    "scipy>=1.11",
+    "requests>=2.31",
+    "opentelemetry-api>=1.24",
+    "opentelemetry-sdk>=1.24",
+    "opentelemetry-exporter-otlp-proto-http>=1.24",
+    "opentelemetry-instrumentation-fastapi>=0.45b0",
+    # Quantum providers
+    "qiskit>=1.0",
+    "qiskit-nature>=0.7",
+    "qiskit-ibm-runtime>=0.23",
+    "pyscf>=2.5",
+    "amazon-braket-sdk>=1.78",
+    "qiskit-braket-provider>=0.4",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.23",
+    "httpx>=0.27",
+]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
